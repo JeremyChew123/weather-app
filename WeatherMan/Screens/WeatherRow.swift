@@ -21,7 +21,6 @@ struct WeatherRow: View {
                 .padding()
                 .background(Color(hue: 1, saturation: 0, brightness: 0.888))
                 .cornerRadius(50)
-                .padding()
             
             VStack(alignment: .leading, spacing: 8) {
                 Text(name)
