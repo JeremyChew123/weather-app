@@ -8,11 +8,11 @@
 import Foundation
 import CoreLocation
 
-class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     
     @Published var location: CLLocationCoordinate2D?
-    @Published var errorMessage: String?
     @Published var isLoading: Bool = false
+    @Published var error: LocationError?
     
     //The manager for start/stop/ask permission
     let manager = CLLocationManager()
@@ -23,10 +23,19 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         manager.delegate = self
     }
     
+    var isAuthorized: Bool {
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse: return true
+        default: return false
+        }
+    }
+    
+    var needsPermission: Bool { manager.authorizationStatus == .notDetermined }
+    
     //To authorise location when app is in use and check if location services are enabled
     func requestAuthorisation() {
         guard CLLocationManager.locationServicesEnabled() else {
-            errorMessage = "Location Services are disabled on your device"
+            error = .servicesDisabled
             return
         }
         manager.requestWhenInUseAuthorization()
@@ -36,10 +45,11 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         switch manager.authorizationStatus {
         case .notDetermined:
-            break
+            isLoading = false
+            manager.requestWhenInUseAuthorization()
         case .restricted, .denied:
             isLoading = false
-            errorMessage = "Location Services is disabled on your device. Please go to settings to enable it"
+            error = .permissionDenied
         case .authorizedAlways, .authorizedWhenInUse:
             requestLocation()
         @unknown default:
@@ -56,13 +66,61 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     
     //To receive location - called when Core Location has new data
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        location = locations.first?.coordinate
+        if let coordinate = locations.first?.coordinate {
+            location = coordinate
+        } else {
+            error = .noCoord
+        }
         isLoading = false
     }
     
     //Called when there is an error
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        errorMessage = "Failed to get location: \(error.localizedDescription)"
+    func locationManager(_ manager: CLLocationManager, didFailWithError err: Error) {
+        error = .coreLocation(err)
         isLoading = false
     }
 }
+
+enum LocationError: LocalizedError, Identifiable {
+    case servicesDisabled
+    case permissionDenied
+    case noCoord
+    case coreLocation(Error)
+    
+    var id: String {
+        switch self {
+        case .servicesDisabled: return "servicesDisabled"
+        case .permissionDenied: return "permissionDenied"
+        case .noCoord:    return "noCoordinates"
+        case .coreLocation(let err): return "coreLocation:\(err.localizedDescription)"
+        }
+    }
+    
+    var errorDescription: String? {
+        switch self {
+        case .servicesDisabled:
+            return "Location services are disabled."
+        case .permissionDenied:
+            return "Permission to access location was denied - Please go to settings to enable."
+        case .noCoord:
+            return "No coordinates found."
+        case .coreLocation:
+            return "Failure to get location"
+        }
+    }
+    
+    var failureReason: String? {
+        switch self {
+            case .servicesDisabled:
+            return "Location services are disabled."
+        case .permissionDenied:
+            return "Permission to access location was denied."
+        case .noCoord:
+            return "No coordinates found."
+        case .coreLocation(let err):
+            return "Error: \(err.localizedDescription)"
+        }
+    }
+}
+
+
